@@ -1,84 +1,39 @@
-# AutoGen - Configuration-Based DTO Generator
+# Auto-Generated Classes
+it is a start-up idea on how we generate class in compile time based on custom annotation.
+the annotation must declare the fields, then we will try to write classes
+(generate) them , it must be super useful at creating DTOs and other custom
+data bearer or for simplifications DTOs classes.
 
-A powerful Java annotation processor that automatically generates DTO (Data Transfer Object) classes with full Jackson serialization support. The generator is now **fully configurable** and works with any project structure.
+# Super Important
+for now , it is uncompleted and untested , just compiles fine and 
+the processing needs working a little more.
+once it is tested and working this section shall be deleted
 
-## 🚀 Features
+## Overview
 
-- ✅ **Configuration-Based**: Fully configurable via properties file
-- ✅ **Universal Compatibility**: Works with any project structure and module naming
-- ✅ **Jackson Integration**: Complete Jackson annotation support with custom serializers
-- ✅ **Collection Support**: Handles Lists, Sets, Maps with proper generics
-- ✅ **Type Safety**: Generates type-safe DTOs with proper imports
-- ✅ **Clean Code**: Generates complete classes with constructors, getters, setters, and utility methods
+This project provides a compile-time solution for generating classes from base classes. 
+Instead of manually creating DTOs, you simply annotate your entity class with `@AutoGen` and specify which fields should be included in the DTO.
 
-## 📋 Configuration
+## Features
 
-The annotation processor reads configuration from `autogen-config.properties` file. This file should be placed in your project's resources directory.
+- **Compile-time generation**: DTOs are generated during compilation, no runtime overhead
+- **Flexible field selection**: Choose which fields to include in the DTO
+- **Custom serialization**: Support for custom Jackson serializers for specific fields
+- **Complete DTO generation**: Includes constructors, getters, setters, equals, hashCode, and toString methods
+- **JSON annotations**: Automatically adds Jackson annotations for JSON serialization
 
-### Configuration File Location
+## Usage
 
-For **single-module projects**:
-```
-src/main/resources/autogen-config.properties
-```
-
-For **multi-module projects** (place in the module that uses the annotation):
-```
-YourModule/src/main/resources/autogen-config.properties
-```
-
-### Configuration Options
-
-```properties
-# The module name where source classes are located
-# Examples: "Main", "app", "core", "api", "service", "web"
-# Leave empty to auto-detect based on annotated class location
-source.module=Main
-
-# The source directory pattern relative to the module root
-# Common patterns: "src/main/java", "src/test/java", "app/src/main/java"
-source.directory=src/main/java
-
-# The subpackage name where DTOs will be generated
-# DTOs will be generated in: {source.package}.{dto.subpackage}
-dto.subpackage=autogendto
-
-# Optional: Override the source directory completely
-# If specified, this will be used instead of auto-detection
-# Format: absolute path or relative path from project root
-# source.directory.override=Main/src/main/java
-```
-
-## 🛠️ Usage
-
-### 1. Add Dependency
-
-Add the annotation processor to your project:
-
-```xml
-<dependency>
-    <groupId>com.AutoGenClass</groupId>
-    <artifactId>class-generator</artifactId>
-    <version>1.0.0</version>
-    <scope>provided</scope>
-</dependency>
-```
-
-### 2. Create Configuration File
-
-Create `autogen-config.properties` in your module's resources directory with your desired settings.
-
-### 3. Annotate Your Classes
+### 1. Annotate Your Entity Class
 
 ```java
-package com.example.model;
-
 import com.AutoGenClass.generator.AutoGen;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 
 @AutoGen(
     simpleFields = {"id", "username", "email", "firstName", "lastName"},
     serializedFields = {"password", "createdAt"},
-    serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
+    serializers = {StdSerializer.class, StdSerializer.class},
     name = "UserDTO"
 )
 public class User {
@@ -88,133 +43,225 @@ public class User {
     private String firstName;
     private String lastName;
     private String password;
-    private LocalDateTime createdAt;
+    private String createdAt;
     
     // ... constructors, getters, setters
 }
 ```
 
-### 4. Compile
+### 2. Compile the Project
 
-Run `mvn compile` and the DTO will be automatically generated in the configured location.
-
-## 📁 Generated File Structure
-
-Based on the configuration, DTOs will be generated in:
-
-```
-{source.module}/{source.directory}/{source.package}/{dto.subpackage}/
+```bash
+mvn compile
 ```
 
-### Example Output
+### 3. Use the Generated DTO
 
-For a class in `com.example.model.User` with default configuration:
-
-**Generated Location**: `Main/src/main/java/com/example/model/autogendto/UserDTO.java`
-
-**Generated Package**: `com.example.model.autogendto`
-
-## 🔧 Advanced Configuration
-
-### Auto-Detection Mode
-
-Leave `source.module` empty to enable auto-detection:
-
-```properties
-source.module=
-source.directory=src/main/java
-dto.subpackage=autogendto
-```
-
-The processor will automatically detect the correct module by analyzing the annotated class location.
-
-### Custom Serializers
-
-You can use custom serializers by providing their full class names:
+The generated `UserDTO` class will be available in `dto/generated-dto/` and can be used like any other Java class:
 
 ```java
-@AutoGen(
-    simpleFields = {"id", "name"},
-    serializedFields = {"sensitiveData"},
-    serializers = {"com.example.serializer.CustomSerializer"},
-    name = "SecureDTO"
-)
+UserDTO userDTO = new UserDTO();
+userDTO.setId(user.getId());
+userDTO.setUsername(user.getUsername());
+userDTO.setEmail(user.getEmail());
+userDTO.setFirstName(user.getFirstName());
+userDTO.setLastName(user.getLastName());
+
+ObjectMapper mapper = new ObjectMapper();
+String json = mapper.writeValueAsString(userDTO);
 ```
 
-### Collection Support
+## Annotation Parameters
 
-The processor automatically handles collections with proper generics:
+### `simpleFields`
+Array of field names that don't require special serialization. These fields will be serialized using Jackson's default serialization.
+
+### `serializedFields`
+Array of field names that require custom serialization. These fields will use the serializers specified in the `serializers` parameter.
+
+### `serializers`
+Array of Jackson serializer classes. Must be in the same order as `serializedFields`. Each serializer will be applied to its corresponding field.
+
+### `name`
+The name of the generated DTO class.
+
+## Generated DTO Features
+
+The generated DTO class includes:
+
+- **Fields**: All specified fields with appropriate Jackson annotations
+- **Constructors**: Default constructor and all-args constructor
+- **Getters and Setters**: For all fields
+- **equals() and hashCode()**: Based on all fields
+- **toString()**: Human-readable string representation
+- **Serializable**: Implements `Serializable` interface
+- **Jackson Annotations**: `@JsonProperty` for all fields, `@JsonSerialize` for custom serialized fields
+
+## Example Generated DTO
+
+For the User entity above, the generated `UserDTO` would look like:
 
 ```java
-@AutoGen(
-    simpleFields = {"id", "name", "roles", "preferences"},
-    serializedFields = {"password"},
-    serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "UserDTO"
-)
-public class User {
-    private Long id;
-    private String name;
-    private List<String> roles;           // → List<String> in DTO
-    private Map<String, Object> preferences; // → Map<String, Object> in DTO
-    private String password;
+public class UserDTO implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    @JsonProperty("id")
+    private Object id;
+
+    @JsonProperty("username")
+    private Object username;
+
+    @JsonProperty("email")
+    private Object email;
+
+    @JsonProperty("firstName")
+    private Object firstName;
+
+    @JsonProperty("lastName")
+    private Object lastName;
+
+    @JsonProperty("password")
+    @JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.StdSerializer.class)
+    private Object password;
+
+    @JsonProperty("createdAt")
+    @JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.StdSerializer.class)
+    private Object createdAt;
+
+    // Constructors, getters, setters, equals, hashCode, toString
 }
 ```
 
-## 🏗️ Supported Project Structures
+## Building and Running
 
-The annotation processor works with any project structure:
+1. Clone the repository
+2. Run `mvn compile` to compile the project
+3. Run `mvn exec:java -Dexec.mainClass="com.AutoGenClass.Main"` to see the demo
 
-### Single Module
-```
-project/
-└── src/main/java/
-    └── com/example/
-        ├── User.java
-        └── autogendto/
-            └── UserDTO.java
-```
+## Current Status
 
-### Multi-Module (Any Names)
-```
-project/
-├── Main/src/main/java/
-│   └── com/example/
-│       ├── User.java
-│       └── autogendto/
-│           └── UserDTO.java
-├── app/src/main/java/
-├── core/src/main/java/
-├── api/src/main/java/
-└── service/src/main/java/
-```
+This project demonstrates the concept of auto-generating DTO classes using annotation processing. The implementation includes:
 
-### Custom Structures
-```
-project/
-├── backend/src/main/java/
-├── frontend/src/main/java/
-└── shared/src/main/java/
-```
+- **@AutoGen annotation**: Defines which fields to include in the DTO and how to serialize them
+- **ClassAutoGenerator**: Annotation processor that reads the annotation and generates DTO classes
+- **Field type matching**: Uses the annotation processing API to match annotation fields with actual class fields
+- **Complete DTO generation**: Includes constructors, getters, setters, equals, hashCode, and toString methods
+- **Jackson integration**: Automatically adds JSON annotations for serialization
 
-## 🎯 Benefits
+## Demo Output
 
-- **🔧 Configurable**: Easy to customize for any project structure
-- **🌍 Universal**: Works with any module naming convention
-- **📦 Portable**: Can be published and used by other developers
-- **🔄 Maintainable**: Configuration-driven approach makes it easy to modify
-- **⚡ Efficient**: Generates optimized, production-ready DTOs
-- **🛡️ Type-Safe**: Full type safety with proper generics support
+The demo shows:
+- **Basic User Example**: Original User entity with simple fields
+- **Enhanced User Example**: Complex entity with collections and entity dependencies
+- **Collection Fields**: List<String> roles, Set<String> preferences, Map<String, String> addresses
+- **Entity Fields**: UserProfile objects with nested relationships
+- **Generated DTO Features**: Type-safe generics, Jackson annotations, import generation
+- **Usage Examples**: Step-by-step DTO creation and usage patterns
+- **Real-world Scenarios**: REST API, database operations, microservice communication
 
-## 🚀 Getting Started
+## Main Class Methods
 
-1. **Clone/Download** the annotation processor
-2. **Install** it to your local Maven repository: `mvn install`
-3. **Add** the dependency to your project
-4. **Create** the configuration file
-5. **Annotate** your classes
-6. **Compile** and enjoy auto-generated DTOs!
+The `Main` class includes 4 demonstration methods:
 
-## 📝 License
+### 1. `createUserDTO(User user)`
+- **Purpose**: Demonstrates the structure that would be generated for a basic User DTO
+- **Shows**: Field types, Jackson annotations, serialization configuration
+- **Output**: Simulated generated class structure with all annotations
+
+### 2. `handleUserDTO(User user)`
+- **Purpose**: Demonstrates how to use the generated User DTO after compilation
+- **Shows**: DTO instantiation, field population, JSON serialization, API usage
+- **Output**: Step-by-step usage examples and expected results
+
+### 3. `createEnhancedUserDTO()`
+- **Purpose**: Demonstrates the enhanced structure with collections and entities
+- **Shows**: Collection types, entity dependencies, content serialization, imports
+- **Output**: Advanced DTO structure with List, Set, Map, and entity fields
+
+### 4. `handleEnhancedUserDTO()`
+- **Purpose**: Demonstrates how to use the enhanced DTO with complex data structures
+- **Shows**: Collection population, entity relationships, advanced serialization
+- **Output**: Real-world usage scenarios for complex DTOs
+
+## Technical Implementation
+
+The enhanced annotation processor:
+1. Reads the @AutoGen annotation from the source class
+2. Uses the annotation processing API to inspect the actual class fields
+3. Matches annotation field names with actual class field names
+4. Analyzes field types including:
+   - Primitive types (int, long, double, etc.)
+   - Wrapper types (Integer, Long, String, etc.)
+   - Collection types (List, Set, Map, arrays)
+   - Entity types from external JARs
+5. Generates appropriate imports based on field types
+6. Adds content serialization for collections
+7. Generates a complete DTO class with proper types and annotations
+
+## Code Documentation
+
+The `ClassAutoGenerator` class is comprehensively documented with:
+
+### Class-Level Documentation
+- **JavaDoc**: Complete class documentation with features, author, version, and since tags
+- **Purpose**: Clear explanation of the annotation processor's role
+- **Key Features**: Bulleted list of main capabilities
+
+### Method Documentation
+- **Public Methods**: Full JavaDoc for `init()` and `process()` methods
+- **Private Methods**: Comprehensive documentation for all utility methods
+- **Parameters**: Detailed parameter descriptions with types
+- **Return Values**: Clear return value documentation
+- **Exceptions**: Documented exceptions where applicable
+
+### Inline Comments
+- **Code Sections**: Comments explaining major code blocks
+- **Logic Flow**: Step-by-step explanations of complex operations
+- **Type Analysis**: Comments explaining type detection logic
+- **Code Generation**: Comments describing what each generation method produces
+
+### Field Documentation
+- **FieldInfo Class**: Complete documentation for the internal data structure
+- **Field Properties**: Detailed explanations of each field's purpose
+- **Constructor**: Documented constructor with all parameters
+
+### Examples and Usage
+- **Code Comments**: Examples of generated code structure
+- **Type Handling**: Comments explaining how different types are processed
+- **Serialization**: Documentation of Jackson annotation generation
+
+## Enhanced Features
+
+### Collection Support
+- **List types**: `List<String>`, `List<UserProfile>`, etc.
+- **Set types**: `Set<String>`, `HashSet<User>`, etc.
+- **Map types**: `Map<String, String>`, `HashMap<String, User>`, etc.
+- **Arrays**: `String[]`, `User[]`, etc.
+- **Content serialization**: Automatically adds `@JsonSerialize(contentUsing = ...)` for collection elements
+
+### Import Generation
+- **Automatic imports**: Generates imports for all non-java.lang types
+- **Collection imports**: Adds `import java.util.List`, `import java.util.Set`, etc.
+- **Entity imports**: Adds imports for external entity types from JARs
+- **Smart import detection**: Only imports types that are actually used
+
+### Type Analysis
+- **Field type detection**: Uses annotation processing API to determine exact types
+- **Generic type extraction**: Extracts element types from collections (e.g., `List<String>` → `String`)
+- **Entity recognition**: Identifies external entity types that need imports
+- **Type safety**: Ensures generated DTOs have correct types matching source classes
+
+## Requirements
+
+- Java 21+
+- Maven 3.6+
+- Jackson 2.19.1+
+
+## License
 
 This project is open source and available under the MIT License.
+
+## Author
+- name : Mohammed SALAMEH
+- github : github.com/M-Salameh
+- email : mohammedsalameh37693@gmail.com
