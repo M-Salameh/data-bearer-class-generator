@@ -13,8 +13,8 @@ import com.AutoGenClass.example.UserProfile;
  */
 @AutoGen(
     simpleFields = {"id", "username", "email", "firstName", "lastName", "roles", "preferences", "addresses"},
-    serializedFields = {"password", "createdAt", "profile"},
-    serializers = {StdSerializer.class, StdSerializer.class, StdSerializer.class},
+    serializedFields = {"password", "createdAt", "userProfile"},
+    serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
     name = "EnhancedUserDTO"
 )
 public class EnhancedUser {

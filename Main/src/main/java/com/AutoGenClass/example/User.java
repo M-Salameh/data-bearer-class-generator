@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 @AutoGen(
     simpleFields = {"id", "username", "email", "firstName", "lastName"},
     serializedFields = {"password", "createdAt"},
-    serializers = {StdSerializer.class, StdSerializer.class},
+    serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
     name = "UserDTO"
 )
 public class User {

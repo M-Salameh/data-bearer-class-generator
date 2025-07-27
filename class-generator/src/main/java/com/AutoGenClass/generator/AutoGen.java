@@ -27,7 +27,7 @@ public @interface AutoGen {
      * each serializer must be in same position of its corresponding field
      * @return
      */
-    Class<?>[] serializers();
+    String[] serializers();
 
     /**
      * name of the output class we need to deal with

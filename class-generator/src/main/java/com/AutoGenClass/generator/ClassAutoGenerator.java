@@ -6,6 +6,8 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.*;
@@ -128,7 +130,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
         String packageName = getPackageName(classElement);
         String[] simpleFields = autoGen.simpleFields();
         String[] serializedFields = autoGen.serializedFields();
-        Class<?>[] serializers = autoGen.serializers();
+        String[] serializers = autoGen.serializers();
         
         try {
             // Analyze field types using annotation processing API
@@ -162,6 +164,15 @@ public class ClassAutoGenerator extends AbstractProcessor {
         /** Element type for collections (e.g., "String" for List<String>) */
         String collectionElementType;
         
+        /** Whether this field is a Map type */
+        boolean isMap;
+        
+        /** Key type for Map collections (e.g., "String" for Map<String, User>) */
+        String mapKeyType;
+        
+        /** Value type for Map collections (e.g., "User" for Map<String, User>) */
+        String mapValueType;
+        
         /** Whether this field is an entity type */
         boolean isEntity;
         
@@ -175,14 +186,21 @@ public class ClassAutoGenerator extends AbstractProcessor {
          * @param fullTypeName the full qualified type name
          * @param isCollection whether this is a collection type
          * @param collectionElementType the element type for collections
+         * @param isMap whether this is a Map type
+         * @param mapKeyType the key type for Map collections
+         * @param mapValueType the value type for Map collections
          * @param isEntity whether this is an entity type
          * @param needsImport whether this type needs an import
          */
-        FieldInfo(String typeName, String fullTypeName, boolean isCollection, String collectionElementType, boolean isEntity, boolean needsImport) {
+        FieldInfo(String typeName, String fullTypeName, boolean isCollection, String collectionElementType, 
+                  boolean isMap, String mapKeyType, String mapValueType, boolean isEntity, boolean needsImport) {
             this.typeName = typeName;
             this.fullTypeName = fullTypeName;
             this.isCollection = isCollection;
             this.collectionElementType = collectionElementType;
+            this.isMap = isMap;
+            this.mapKeyType = mapKeyType;
+            this.mapValueType = mapValueType;
             this.isEntity = isEntity;
             this.needsImport = needsImport;
         }
@@ -226,7 +244,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
                 fieldInfoMap.put(fieldName, fieldInfo);
             } else {
                 // If field not found, default to Object and log a warning
-                fieldInfoMap.put(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false));
+                fieldInfoMap.put(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
                 messager.printMessage(Diagnostic.Kind.WARNING, 
                     "Field '" + fieldName + "' not found in class " + classElement.getSimpleName() + 
                     ". Using Object type.");
@@ -252,26 +270,36 @@ public class ClassAutoGenerator extends AbstractProcessor {
         
         // Handle primitive types (int, long, double, etc.)
         if (isPrimitiveType(typeName)) {
-            return new FieldInfo(getPrimitiveTypeName(typeName), fullTypeName, false, null, false, false);
+            return new FieldInfo(getPrimitiveTypeName(typeName), fullTypeName, false, null, false, null, null, false, false);
         }
         
         // Handle wrapper types (Integer, Long, String, etc.)
         if (isWrapperType(typeName)) {
-            return new FieldInfo(getWrapperTypeName(typeName), fullTypeName, false, null, false, false);
+            return new FieldInfo(getWrapperTypeName(typeName), fullTypeName, false, null, false, null, null, false, false);
         }
         
         // Handle collection types (List, Set, Map, etc.)
         if (isCollectionType(typeName)) {
             String elementType = extractCollectionElementType(typeName);
             String simpleElementType = getSimpleTypeName(elementType);
-            return new FieldInfo(getCollectionTypeName(typeName), fullTypeName, true, simpleElementType, false, true);
+            boolean isMap = typeName.startsWith("java.util.Map");
+            String mapKeyType = null;
+            String mapValueType = null;
+            
+            if (isMap) {
+                String[] mapTypes = extractMapTypes(typeName);
+                mapKeyType = getSimpleTypeName(mapTypes[0]);
+                mapValueType = getSimpleTypeName(mapTypes[1]);
+            }
+            
+            return new FieldInfo(getCollectionTypeName(typeName), fullTypeName, true, simpleElementType, isMap, mapKeyType, mapValueType, false, true);
         }
         
         // Handle arrays (String[], User[], etc.)
         if (typeName.endsWith("[]")) {
             String elementType = typeName.substring(0, typeName.length() - 2);
             String simpleElementType = getSimpleTypeName(elementType);
-            return new FieldInfo(simpleElementType + "[]", fullTypeName, true, simpleElementType, false, true);
+            return new FieldInfo(simpleElementType + "[]", fullTypeName, true, simpleElementType, false, null, null, false, true);
         }
         
         // Handle other types (potentially entities from external JARs)
@@ -279,7 +307,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
         boolean isEntity = !isJavaLangType(typeName);
         boolean needsImport = isEntity && !typeName.contains("java.lang.");
         
-        return new FieldInfo(simpleTypeName, fullTypeName, false, null, isEntity, needsImport);
+        return new FieldInfo(simpleTypeName, fullTypeName, false, null, false, null, null, isEntity, needsImport);
     }
 
     /**
@@ -399,6 +427,27 @@ public class ClassAutoGenerator extends AbstractProcessor {
     }
 
     /**
+     * Extracts key and value types from a Map type string.
+     * 
+     * @param typeName the Map type string (e.g., "java.util.Map<java.lang.String,com.example.User>")
+     * @return array containing [keyType, valueType]
+     */
+    private String[] extractMapTypes(String typeName) {
+        int startBracket = typeName.indexOf('<');
+        int endBracket = typeName.lastIndexOf('>');
+        
+        if (startBracket != -1 && endBracket != -1) {
+            String genericPart = typeName.substring(startBracket + 1, endBracket);
+            String[] parts = genericPart.split(",");
+            if (parts.length >= 2) {
+                return new String[]{parts[0].trim(), parts[1].trim()};
+            }
+        }
+        
+        return new String[]{"Object", "Object"};
+    }
+
+    /**
      * Checks if a type name is from the java.lang package.
      * 
      * @param typeName the type name to check
@@ -437,45 +486,473 @@ public class ClassAutoGenerator extends AbstractProcessor {
      * @throws IOException if there's an error writing the source file
      */
     private void generateDTOClass(TypeElement sourceClass, String className, String packageName, 
-                                 String[] simpleFields, String[] serializedFields, Class<?>[] serializers,
+                                 String[] simpleFields, String[] serializedFields, String[] serializers,
                                  Map<String, FieldInfo> fieldInfoMap) 
             throws IOException {
         
-        // Create the source file
-        JavaFileObject sourceFile = filer.createSourceFile(packageName + "." + className);
+        // Create the DTO package name based on groupId
+        String dtoPackageName = getDTOPackageName(packageName);
         
+        // Generate the source code content
+        String sourceCode = generateSourceCode(sourceClass, className, dtoPackageName, 
+                                             simpleFields, serializedFields, serializers, fieldInfoMap);
+        
+        // Write only to source directory (skip filer to avoid recreation issues)
+        writeToSourceDirectory(dtoPackageName, className, sourceCode);
+    }
+
+    /**
+     * Generates the complete source code for a DTO class.
+     */
+    private String generateSourceCode(TypeElement sourceClass, String className, String packageName,
+                                    String[] simpleFields, String[] serializedFields, String[] serializers,
+                                    Map<String, FieldInfo> fieldInfoMap) {
+        StringBuilder sourceCode = new StringBuilder();
+        
+        // Generate package declaration
+        sourceCode.append("package ").append(packageName).append(";\n\n");
+        
+        // Generate imports
+        sourceCode.append(generateImportsString(fieldInfoMap, serializers));
+        
+        // Generate class documentation and declaration
+        sourceCode.append("/**\n");
+        sourceCode.append(" * Auto-generated DTO class for ").append(sourceClass.getQualifiedName()).append("\n");
+        sourceCode.append(" */\n");
+        sourceCode.append("public class ").append(className).append(" implements Serializable {\n");
+        
+        // Generate fields
+        sourceCode.append(generateFieldsString(simpleFields, serializedFields, serializers, fieldInfoMap));
+        
+        // Generate constructors
+        sourceCode.append(generateConstructorsString(className, simpleFields, serializedFields, fieldInfoMap));
+        
+        // Generate getters and setters
+        sourceCode.append(generateGettersAndSettersString(simpleFields, serializedFields, fieldInfoMap));
+        
+        // Generate utility methods
+        sourceCode.append(generateUtilityMethodsString(className, simpleFields, serializedFields));
+        
+        sourceCode.append("}\n");
+        
+        return sourceCode.toString();
+    }
+
+    /**
+     * Writes the source code to the annotation processor filer.
+     */
+    private void writeToFiler(String packageName, String className, String sourceCode) throws IOException {
+        JavaFileObject sourceFile = filer.createSourceFile(packageName + "." + className);
         try (PrintWriter out = new PrintWriter(sourceFile.openWriter())) {
-            // Generate package declaration
-            if (!packageName.isEmpty()) {
-                out.println("package " + packageName + ";");
-                out.println();
-            }
-
-            // Generate imports based on field types
-            generateImports(out, fieldInfoMap);
-
-            // Generate class documentation and declaration
-            out.println("/**");
-            out.println(" * Auto-generated DTO class for " + sourceClass.getQualifiedName());
-            out.println(" */");
-            out.println("public class " + className + " implements Serializable {");
-            out.println("    private static final long serialVersionUID = 1L;");
-            out.println();
-
-            // Generate fields with proper types and annotations
-            generateFields(out, simpleFields, serializedFields, serializers, fieldInfoMap);
-
-            // Generate constructors
-            generateConstructors(out, className, simpleFields, serializedFields, fieldInfoMap);
-
-            // Generate getters and setters
-            generateGettersAndSetters(out, simpleFields, serializedFields, fieldInfoMap);
-
-            // Generate utility methods (equals, hashCode, toString)
-            generateUtilityMethods(out, className, simpleFields, serializedFields);
-
-            out.println("}");
+            out.print(sourceCode);
         }
+    }
+
+    /**
+     * Writes the source code to the source directory.
+     */
+    private void writeToSourceDirectory(String packageName, String className, String sourceCode) {
+        try {
+            // Get the current working directory
+            String currentDir = System.getProperty("user.dir");
+            
+            // Find the source directory dynamically by looking for the package structure
+            String sourceDir = findSourceDirectory(currentDir, packageName);
+            String packagePath = packageName.replace('.', '/');
+            String fullPath = sourceDir + "/" + packagePath;
+            
+            // Create directories if they don't exist
+            File dir = new File(fullPath);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            
+            // Delete existing file if it exists
+            File sourceFile = new File(fullPath + "/" + className + ".java");
+            if (sourceFile.exists()) {
+                sourceFile.delete();
+                messager.printMessage(Diagnostic.Kind.NOTE, 
+                    "Deleted existing file: " + sourceFile.getAbsolutePath());
+            }
+            
+            // Write the new source file
+            try (PrintWriter out = new PrintWriter(new FileWriter(sourceFile))) {
+                out.print(sourceCode);
+            }
+            
+            messager.printMessage(Diagnostic.Kind.NOTE, 
+                "Generated source file: " + sourceFile.getAbsolutePath());
+                
+        } catch (IOException e) {
+            messager.printMessage(Diagnostic.Kind.WARNING, 
+                "Failed to write source file: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Finds the project root directory by looking for pom.xml.
+     */
+    private String findProjectRoot(String currentDir) {
+        File current = new File(currentDir);
+        while (current != null) {
+            if (new File(current, "pom.xml").exists()) {
+                return current.getAbsolutePath();
+            }
+            current = current.getParentFile();
+        }
+        return System.getProperty("user.dir");
+    }
+
+    /**
+     * Finds the source directory that contains the given package.
+     * 
+     * @param currentDir the current directory to start searching from
+     * @param packageName the package name to search for
+     * @return the source directory path
+     */
+    private String findSourceDirectory(String currentDir, String packageName) {
+        // Convert package name to directory path
+        String packagePath = packageName.replace('.', '/');
+        
+        // Look for the package in common Maven source directories
+        // Prioritize Main module over root src directory
+        String[] possiblePaths = {
+            currentDir + "/Main/src/main/java",  // Prioritize Main module
+            currentDir + "/src/main/java",       // Fallback to root src
+            currentDir + "/class-generator/src/main/java"
+        };
+        
+        for (String path : possiblePaths) {
+            File packageDir = new File(path + "/" + packagePath);
+            if (packageDir.exists() && packageDir.isDirectory()) {
+                // Check if this directory contains original source files (not generated DTO files)
+                File[] files = packageDir.listFiles();
+                if (files != null) {
+                    boolean hasOriginalSourceFiles = false;
+                    for (File file : files) {
+                        if (file.isFile() && file.getName().endsWith(".java") && !file.getName().endsWith("DTO.java")) {
+                            hasOriginalSourceFiles = true;
+                            break;
+                        }
+                    }
+                    if (hasOriginalSourceFiles) {
+                        return path;
+                    }
+                }
+            }
+        }
+        
+        // If not found, try to find any src/main/java directory
+        File current = new File(currentDir);
+        while (current != null) {
+            File srcMainJava = new File(current, "src/main/java");
+            if (srcMainJava.exists() && srcMainJava.isDirectory()) {
+                return srcMainJava.getAbsolutePath();
+            }
+            current = current.getParentFile();
+        }
+        
+        // Fallback to current directory + src/main/java
+        return currentDir + "/src/main/java";
+    }
+
+    /**
+     * Generates import statements as a string.
+     */
+    private String generateImportsString(Map<String, FieldInfo> fieldInfoMap, String[] serializers) {
+        StringBuilder imports = new StringBuilder();
+
+        //Standard imports that are always needed
+        imports.append("import com.fasterxml.jackson.annotation.JsonProperty;\n");
+        imports.append("import com.fasterxml.jackson.databind.annotation.JsonSerialize;\n");
+        imports.append("import java.io.Serializable;\n");
+        imports.append("import java.util.Objects;\n");
+        
+        // Add serializer imports
+        Set<String> importSet = new HashSet<>();
+        if (serializers != null) {
+            for (String serializer : serializers) {
+                if (serializer != null && !serializer.trim().isEmpty()) {
+                    importSet.add("import " + serializer + ";");
+                }
+            }
+        }
+        
+        // Collect imports based on field types
+        for (FieldInfo fieldInfo : fieldInfoMap.values()) {
+            // Add collection imports (only the base collection type, not with generics)
+            if (fieldInfo.isCollection) {
+                importSet.add("import java.util." + fieldInfo.typeName + ";");
+            }
+            // Add entity imports for non-java.lang types (only if it's not a collection element type)
+            if (fieldInfo.needsImport && !fieldInfo.fullTypeName.startsWith("java.lang.") && !fieldInfo.isCollection) {
+                importSet.add("import " + fieldInfo.fullTypeName + ";");
+            }
+        }
+        
+        // Write all collected imports
+        for (String importStatement : importSet) {
+            imports.append(importStatement).append("\n");
+        }
+        imports.append("\n");
+        
+        return imports.toString();
+    }
+
+    /**
+     * Generates field declarations as a string.
+     */
+    private String generateFieldsString(String[] simpleFields, String[] serializedFields, 
+                                      String[] serializers, Map<String, FieldInfo> fieldInfoMap) {
+        StringBuilder fields = new StringBuilder();
+        
+        // Generate simple fields (no special serialization)
+        for (String fieldName : simpleFields) {
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            fields.append("    @JsonProperty(\"").append(fieldName).append("\")\n");
+            
+            // Add content serialization for collections
+            if (fieldInfo.isCollection) {
+                fields.append("    @JsonSerialize(contentUsing = StdSerializer.class)\n");
+                if (fieldInfo.isMap) {
+                    fields.append("    private ").append(fieldInfo.typeName).append("<").append(fieldInfo.mapKeyType).append(", ").append(fieldInfo.mapValueType).append("> ").append(fieldName).append(";\n");
+                } else {
+                    fields.append("    private ").append(fieldInfo.typeName).append("<").append(fieldInfo.collectionElementType).append("> ").append(fieldName).append(";\n");
+                }
+            } else {
+                fields.append("    private ").append(fieldInfo.typeName).append(" ").append(fieldName).append(";\n");
+            }
+            fields.append("\n");
+        }
+
+        // Generate serialized fields (with custom serializers)
+        for (int i = 0; i < serializedFields.length && i < serializers.length; i++) {
+            String fieldName = serializedFields[i];
+            String serializer = serializers[i];
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            
+            fields.append("    @JsonProperty(\"").append(fieldName).append("\")\n");
+            if (fieldInfo.isCollection) {
+                // For collections, add both field and content serialization
+                fields.append("    @JsonSerialize(using = ").append(getSimpleClassName(serializer)).append(".class)\n");
+                fields.append("    @JsonSerialize(contentUsing = StdSerializer.class)\n");
+                if (fieldInfo.isMap) {
+                    fields.append("    private ").append(fieldInfo.typeName).append("<").append(fieldInfo.mapKeyType).append(", ").append(fieldInfo.mapValueType).append("> ").append(fieldName).append(";\n");
+                } else {
+                    fields.append("    private ").append(fieldInfo.typeName).append("<").append(fieldInfo.collectionElementType).append("> ").append(fieldName).append(";\n");
+                }
+            } else {
+                // For simple types, add only field serialization
+                fields.append("    @JsonSerialize(using = ").append(getSimpleClassName(serializer)).append(".class)\n");
+                fields.append("    private ").append(fieldInfo.typeName).append(" ").append(fieldName).append(";\n");
+            }
+            fields.append("\n");
+        }
+        
+        return fields.toString();
+    }
+
+    /**
+     * Extracts the simple class name from a full class name.
+     * 
+     * @param fullClassName the full class name (e.g., "com.example.MySerializer")
+     * @return the simple class name (e.g., "MySerializer")
+     */
+    private String getSimpleClassName(String fullClassName) {
+        if (fullClassName == null || fullClassName.trim().isEmpty()) {
+            return "StdSerializer";
+        }
+        
+        int lastDotIndex = fullClassName.lastIndexOf('.');
+        if (lastDotIndex >= 0 && lastDotIndex < fullClassName.length() - 1) {
+            return fullClassName.substring(lastDotIndex + 1);
+        }
+        
+        return fullClassName;
+    }
+
+    /**
+     * Generates constructors as a string.
+     */
+    private String generateConstructorsString(String className, String[] simpleFields, 
+                                            String[] serializedFields, Map<String, FieldInfo> fieldInfoMap) {
+        StringBuilder constructors = new StringBuilder();
+        
+        // Generate default constructor
+        constructors.append("    public ").append(className).append("() {\n");
+        constructors.append("    }\n\n");
+
+        // Generate all-args constructor
+        constructors.append("    public ").append(className).append("(\n");
+        
+        // Add simple field parameters
+        for (int i = 0; i < simpleFields.length; i++) {
+            String fieldName = simpleFields[i];
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            String paramType;
+            if (fieldInfo.isCollection) {
+                if (fieldInfo.isMap) {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+                } else {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+                }
+            } else {
+                paramType = fieldInfo.typeName;
+            }
+            constructors.append("        ").append(paramType).append(" ").append(fieldName);
+            if (i < simpleFields.length - 1 || serializedFields.length > 0) {
+                constructors.append(",\n");
+            } else {
+                constructors.append("\n");
+            }
+        }
+        
+        // Add serialized field parameters
+        for (int i = 0; i < serializedFields.length; i++) {
+            String fieldName = serializedFields[i];
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            String paramType;
+            if (fieldInfo.isCollection) {
+                if (fieldInfo.isMap) {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+                } else {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+                }
+            } else {
+                paramType = fieldInfo.typeName;
+            }
+            constructors.append("        ").append(paramType).append(" ").append(fieldName);
+            if (i < serializedFields.length - 1) {
+                constructors.append(",\n");
+            } else {
+                constructors.append("\n");
+            }
+        }
+        
+        // Constructor body - assign parameters to fields
+        constructors.append("    ) {\n");
+        for (String fieldName : simpleFields) {
+            constructors.append("        this.").append(fieldName).append(" = ").append(fieldName).append(";\n");
+        }
+        for (String fieldName : serializedFields) {
+            constructors.append("        this.").append(fieldName).append(" = ").append(fieldName).append(";\n");
+        }
+        constructors.append("    }\n\n");
+        
+        return constructors.toString();
+    }
+
+    /**
+     * Generates getters and setters as a string.
+     */
+    private String generateGettersAndSettersString(String[] simpleFields, String[] serializedFields, 
+                                                  Map<String, FieldInfo> fieldInfoMap) {
+        StringBuilder methods = new StringBuilder();
+        
+        // Generate getters and setters for simple fields
+        for (String fieldName : simpleFields) {
+            methods.append(generateGetterAndSetterString(fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false))));
+        }
+        
+        // Generate getters and setters for serialized fields
+        for (String fieldName : serializedFields) {
+            methods.append(generateGetterAndSetterString(fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false))));
+        }
+        
+        return methods.toString();
+    }
+
+    /**
+     * Generates a getter and setter method for a single field as a string.
+     */
+    private String generateGetterAndSetterString(String fieldName, FieldInfo fieldInfo) {
+        StringBuilder methods = new StringBuilder();
+        String capitalizedFieldName = fieldName.substring(0, 1).toUpperCase() + fieldName.substring(1);
+        String returnType;
+        if (fieldInfo.isCollection) {
+            if (fieldInfo.isMap) {
+                returnType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+            } else {
+                returnType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+            }
+        } else {
+            returnType = fieldInfo.typeName;
+        }
+        
+        // Generate getter method
+        methods.append("    public ").append(returnType).append(" get").append(capitalizedFieldName).append("() {\n");
+        methods.append("        return ").append(fieldName).append(";\n");
+        methods.append("    }\n\n");
+
+        // Generate setter method
+        methods.append("    public void set").append(capitalizedFieldName).append("(").append(returnType).append(" ").append(fieldName).append(") {\n");
+        methods.append("        this.").append(fieldName).append(" = ").append(fieldName).append(";\n");
+        methods.append("    }\n\n");
+        
+        return methods.toString();
+    }
+
+    /**
+     * Generates utility methods as a string.
+     */
+    private String generateUtilityMethodsString(String className, String[] simpleFields, String[] serializedFields) {
+        StringBuilder methods = new StringBuilder();
+        
+        // Generate equals method
+        methods.append("    @Override\n");
+        methods.append("    public boolean equals(Object obj) {\n");
+        methods.append("        if (this == obj) return true;\n");
+        methods.append("        if (obj == null || getClass() != obj.getClass()) return false;\n");
+        methods.append("        ").append(className).append(" that = (").append(className).append(") obj;\n");
+        methods.append("        return \n");
+        
+        // Combine all fields for comparison
+        String[] allFields = new String[simpleFields.length + serializedFields.length];
+        System.arraycopy(simpleFields, 0, allFields, 0, simpleFields.length);
+        System.arraycopy(serializedFields, 0, allFields, simpleFields.length, serializedFields.length);
+        
+        // Generate field comparisons
+        for (int i = 0; i < allFields.length; i++) {
+            methods.append("                Objects.equals(").append(allFields[i]).append(", that.").append(allFields[i]).append(")");
+            if (i < allFields.length - 1) {
+                methods.append(" &&\n");
+            } else {
+                methods.append(";\n");
+            }
+        }
+        methods.append("    }\n\n");
+
+        // Generate hashCode method
+        methods.append("    @Override\n");
+        methods.append("    public int hashCode() {\n");
+        methods.append("        return Objects.hash(\n");
+        for (int i = 0; i < allFields.length; i++) {
+            methods.append("            ").append(allFields[i]);
+            if (i < allFields.length - 1) {
+                methods.append(",\n");
+            } else {
+                methods.append("\n");
+            }
+        }
+        methods.append("        );\n");
+        methods.append("    }\n\n");
+
+        // Generate toString method
+        methods.append("    @Override\n");
+        methods.append("    public String toString() {\n");
+        methods.append("        return \"").append(className).append("{\" +\n");
+        for (int i = 0; i < allFields.length; i++) {
+            methods.append("                \"").append(allFields[i]).append("=\" + ").append(allFields[i]);
+            if (i < allFields.length - 1) {
+                methods.append(" + \",\" +\n");
+            } else {
+                methods.append(" +\n");
+            }
+        }
+        methods.append("                '}';\n");
+        methods.append("    }\n");
+        
+        return methods.toString();
     }
 
     /**
@@ -498,12 +975,12 @@ public class ClassAutoGenerator extends AbstractProcessor {
         // Collect imports based on field types
         Set<String> imports = new HashSet<>();
         for (FieldInfo fieldInfo : fieldInfoMap.values()) {
-            // Add collection imports
+            // Add collection imports (only the base collection type, not with generics)
             if (fieldInfo.isCollection) {
                 imports.add("import java.util." + fieldInfo.typeName + ";");
             }
-            // Add entity imports for non-java.lang types
-            if (fieldInfo.needsImport && !fieldInfo.fullTypeName.startsWith("java.lang.")) {
+            // Add entity imports for non-java.lang types (only if it's not a collection element type)
+            if (fieldInfo.needsImport && !fieldInfo.fullTypeName.startsWith("java.lang.") && !fieldInfo.isCollection) {
                 imports.add("import " + fieldInfo.fullTypeName + ";");
             }
         }
@@ -528,16 +1005,20 @@ public class ClassAutoGenerator extends AbstractProcessor {
      * @param fieldInfoMap map of field names to their type information
      */
     private void generateFields(PrintWriter out, String[] simpleFields, String[] serializedFields, 
-                               Class<?>[] serializers, Map<String, FieldInfo> fieldInfoMap) {
+                               String[] serializers, Map<String, FieldInfo> fieldInfoMap) {
         // Generate simple fields (no special serialization)
         for (String fieldName : simpleFields) {
-            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false));
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
             out.println("    @JsonProperty(\"" + fieldName + "\")");
             
             // Add content serialization for collections
             if (fieldInfo.isCollection) {
                 out.println("    @JsonSerialize(contentUsing = StdSerializer.class)");
-                out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.collectionElementType + "> " + fieldName + ";");
+                if (fieldInfo.isMap) {
+                    out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + "> " + fieldName + ";");
+                } else {
+                    out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.collectionElementType + "> " + fieldName + ";");
+                }
             } else {
                 out.println("    private " + fieldInfo.typeName + " " + fieldName + ";");
             }
@@ -547,18 +1028,22 @@ public class ClassAutoGenerator extends AbstractProcessor {
         // Generate serialized fields (with custom serializers)
         for (int i = 0; i < serializedFields.length && i < serializers.length; i++) {
             String fieldName = serializedFields[i];
-            Class<?> serializer = serializers[i];
-            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false));
+            String serializer = serializers[i];
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
             
             out.println("    @JsonProperty(\"" + fieldName + "\")");
             if (fieldInfo.isCollection) {
                 // For collections, add both field and content serialization
-                out.println("    @JsonSerialize(using = " + serializer.getCanonicalName() + ".class)");
+                out.println("    @JsonSerialize(using = " + serializer + ".class)");
                 out.println("    @JsonSerialize(contentUsing = StdSerializer.class)");
-                out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.collectionElementType + "> " + fieldName + ";");
+                if (fieldInfo.isMap) {
+                    out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + "> " + fieldName + ";");
+                } else {
+                    out.println("    private " + fieldInfo.typeName + "<" + fieldInfo.collectionElementType + "> " + fieldName + ";");
+                }
             } else {
                 // For simple types, add only field serialization
-                out.println("    @JsonSerialize(using = " + serializer.getCanonicalName() + ".class)");
+                out.println("    @JsonSerialize(using = " + serializer + ".class)");
                 out.println("    private " + fieldInfo.typeName + " " + fieldName + ";");
             }
             out.println();
@@ -590,8 +1075,17 @@ public class ClassAutoGenerator extends AbstractProcessor {
         // Add simple field parameters
         for (int i = 0; i < simpleFields.length; i++) {
             String fieldName = simpleFields[i];
-            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false));
-            String paramType = fieldInfo.isCollection ? fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">" : fieldInfo.typeName;
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            String paramType;
+            if (fieldInfo.isCollection) {
+                if (fieldInfo.isMap) {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+                } else {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+                }
+            } else {
+                paramType = fieldInfo.typeName;
+            }
             out.print("        " + paramType + " " + fieldName);
             if (i < simpleFields.length - 1 || serializedFields.length > 0) {
                 out.println(",");
@@ -603,8 +1097,17 @@ public class ClassAutoGenerator extends AbstractProcessor {
         // Add serialized field parameters
         for (int i = 0; i < serializedFields.length; i++) {
             String fieldName = serializedFields[i];
-            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false));
-            String paramType = fieldInfo.isCollection ? fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">" : fieldInfo.typeName;
+            FieldInfo fieldInfo = fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false));
+            String paramType;
+            if (fieldInfo.isCollection) {
+                if (fieldInfo.isMap) {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+                } else {
+                    paramType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+                }
+            } else {
+                paramType = fieldInfo.typeName;
+            }
             out.print("        " + paramType + " " + fieldName);
             if (i < serializedFields.length - 1) {
                 out.println(",");
@@ -638,14 +1141,14 @@ public class ClassAutoGenerator extends AbstractProcessor {
      */
     private void generateGettersAndSetters(PrintWriter out, String[] simpleFields, String[] serializedFields, 
                                           Map<String, FieldInfo> fieldInfoMap) {
-        // Generate getters and setters for simple fields
+                // Generate getters and setters for simple fields
         for (String fieldName : simpleFields) {
-            generateGetterAndSetter(out, fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false)));
+            generateGetterAndSetter(out, fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false)));
         }
-
+        
         // Generate getters and setters for serialized fields
         for (String fieldName : serializedFields) {
-            generateGetterAndSetter(out, fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, false)));
+            generateGetterAndSetter(out, fieldName, fieldInfoMap.getOrDefault(fieldName, new FieldInfo("Object", "java.lang.Object", false, null, false, null, null, false, false)));
         }
     }
 
@@ -661,7 +1164,16 @@ public class ClassAutoGenerator extends AbstractProcessor {
      */
     private void generateGetterAndSetter(PrintWriter out, String fieldName, FieldInfo fieldInfo) {
         String capitalizedFieldName = fieldName.substring(0, 1).toUpperCase() + fieldName.substring(1);
-        String returnType = fieldInfo.isCollection ? fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">" : fieldInfo.typeName;
+        String returnType;
+        if (fieldInfo.isCollection) {
+            if (fieldInfo.isMap) {
+                returnType = fieldInfo.typeName + "<" + fieldInfo.mapKeyType + ", " + fieldInfo.mapValueType + ">";
+            } else {
+                returnType = fieldInfo.typeName + "<" + fieldInfo.collectionElementType + ">";
+            }
+        } else {
+            returnType = fieldInfo.typeName;
+        }
         
         // Generate getter method
         out.println("    public " + returnType + " get" + capitalizedFieldName + "() {");
@@ -760,5 +1272,23 @@ public class ClassAutoGenerator extends AbstractProcessor {
             return ((PackageElement) enclosingElement).getQualifiedName().toString();
         }
         return "";
+    }
+
+    /**
+     * Generates the DTO package name based on the source package.
+     * 
+     * <p>This method creates a subpackage called "autogendto" within the source package
+     * where the generated DTO classes will be placed.</p>
+     * 
+     * @param sourcePackageName the source package name
+     * @return the DTO package name (source package + .autogendto)
+     */
+    private String getDTOPackageName(String sourcePackageName) {
+        if (sourcePackageName == null || sourcePackageName.isEmpty()) {
+            throw new RuntimeException("Cannot get package name to store auto gen files in");
+        }
+        
+        // Create a subpackage called "autogendto" within the source package
+        return sourcePackageName + ".autogendto";
     }
 }
