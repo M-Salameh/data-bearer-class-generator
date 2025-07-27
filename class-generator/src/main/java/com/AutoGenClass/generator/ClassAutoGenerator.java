@@ -98,7 +98,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
             for (Element element : annotatedElements) {
                 // Only process classes and interfaces
                 if (element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.INTERFACE) {
-                    //processClass((TypeElement) element);
+                    processClass((TypeElement) element);
                 }
             }
         }
@@ -116,8 +116,10 @@ public class ClassAutoGenerator extends AbstractProcessor {
      */
     private void processClass(TypeElement classElement) {
         // Get the @AutoGen annotation from the class
+        System.out.println("processing class : " + classElement);
         AutoGen autoGen = classElement.getAnnotation(AutoGen.class);
         if (autoGen == null) {
+            System.out.println("class : " + classElement + " is annotated but not with autogen");
             return;
         }
 
@@ -130,6 +132,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
         
         try {
             // Analyze field types using annotation processing API
+            //System.out.println("class : " + classElement + " is annotated but not with autogen");
             Map<String, FieldInfo> fieldInfoMap = getFieldInfo(classElement, simpleFields, serializedFields);
             
             // Generate the DTO class
