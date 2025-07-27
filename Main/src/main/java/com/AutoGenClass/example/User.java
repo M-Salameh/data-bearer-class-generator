@@ -6,12 +6,14 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 /**
  * Example entity class that demonstrates the use of @AutoGen annotation
  * to automatically generate a DTO class at compile time.
+ * This example does not specify a module, so the DTO will be created
+ * in the same module as this class (Main module).
  */
 @AutoGen(
     simpleFields = {"id", "username", "email", "firstName", "lastName"},
     serializedFields = {"password", "createdAt"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "UserDTO"
+    name = "UserDTO", module = "Main"
 )
 public class User {
     private Long id;

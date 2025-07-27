@@ -34,4 +34,11 @@ public @interface AutoGen {
      * @return
      */
     String name();
+
+    /**
+     * module name where the DTO should be created
+     * if not specified, will use the same module as the source class
+     * @return
+     */
+    String module() default "";
 }

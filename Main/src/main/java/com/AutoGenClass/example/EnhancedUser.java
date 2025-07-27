@@ -15,7 +15,7 @@ import com.AutoGenClass.example.UserProfile;
     simpleFields = {"id", "username", "email", "firstName", "lastName", "roles", "preferences", "addresses"},
     serializedFields = {"password", "createdAt", "userProfile"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "EnhancedUserDTO"
+    name = "EnhancedUserDTO", module = "Main"
 )
 public class EnhancedUser {
     private Long id;

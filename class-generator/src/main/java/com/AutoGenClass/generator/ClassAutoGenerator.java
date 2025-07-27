@@ -112,6 +112,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
         String[] simpleFields = autoGen.simpleFields();
         String[] serializedFields = autoGen.serializedFields();
         String[] serializers = autoGen.serializers();
+        String moduleName = autoGen.module();
         
         try {
             // Analyze field types using annotation processing API
@@ -119,7 +120,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
             Map<String, FieldInfo> fieldInfoMap = getFieldInfo(classElement, simpleFields, serializedFields);
             
             // Generate the DTO class
-            generateDTOClass(classElement, className, packageName, simpleFields, serializedFields, serializers, fieldInfoMap);
+            generateDTOClass(classElement, className, packageName, simpleFields, serializedFields, serializers, fieldInfoMap, moduleName);
             messager.printMessage(Diagnostic.Kind.NOTE, "Generated DTO class: " + packageName + "." + className);
         } catch (Exception e) {
             messager.printMessage(Diagnostic.Kind.ERROR, "Failed to generate DTO class: " + e.getMessage());
@@ -468,7 +469,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
      */
     private void generateDTOClass(TypeElement sourceClass, String className, String packageName, 
                                  String[] simpleFields, String[] serializedFields, String[] serializers,
-                                 Map<String, FieldInfo> fieldInfoMap) 
+                                 Map<String, FieldInfo> fieldInfoMap, String moduleName) 
             throws IOException {
         
         // Create the DTO package name based on groupId
@@ -479,7 +480,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
                                              simpleFields, serializedFields, serializers, fieldInfoMap);
         
         // Write only to source directory (skip filer to avoid recreation issues)
-        writeToSourceDirectory(sourceClass, dtoPackageName, className, sourceCode);
+        writeToSourceDirectory(sourceClass, dtoPackageName, className, sourceCode, moduleName);
     }
 
     /**
@@ -532,10 +533,10 @@ public class ClassAutoGenerator extends AbstractProcessor {
     /**
      * Writes the source code to the source directory.
      */
-    private void writeToSourceDirectory(TypeElement sourceClass, String packageName, String className, String sourceCode) {
+    private void writeToSourceDirectory(TypeElement sourceClass, String packageName, String className, String sourceCode, String moduleName) {
         try {
             // Get the source file location from the annotated class
-            String sourceDir = findSourceDirectoryFromClass(sourceClass, packageName);
+            String sourceDir = findSourceDirectoryFromClass(sourceClass, packageName, moduleName);
             String packagePath = packageName.replace('.', '/');
             String fullPath = sourceDir + "/" + packagePath;
             
@@ -1225,7 +1226,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
      * @param targetPackageName the target package name for the DTO
      * @return the source directory path
      */
-    private String findSourceDirectoryFromClass(TypeElement sourceClass, String targetPackageName) {
+    private String findSourceDirectoryFromClass(TypeElement sourceClass, String targetPackageName, String moduleName) {
         try {
             // Get the source file URI from the class element
             String sourceFileUri = sourceClass.getEnclosingElement().toString();
@@ -1251,20 +1252,40 @@ public class ClassAutoGenerator extends AbstractProcessor {
             String sourcePackagePath = sourcePackageName.replace('.', '/');
             String parentPackagePath = parentPackageName.replace('.', '/');
             
+            // If module name is specified, search in that specific module
+            if (moduleName != null && !moduleName.trim().isEmpty()) {
+                String moduleSourceDir = currentDir + "/" + moduleName + "/src/main/java";
+                File moduleDir = new File(moduleSourceDir);
+                if (moduleDir.exists() && moduleDir.isDirectory()) {
+                    messager.printMessage(Diagnostic.Kind.NOTE, 
+                        "Using specified module: " + moduleName + " at " + moduleSourceDir);
+                    return moduleSourceDir;
+                } else {
+                    messager.printMessage(Diagnostic.Kind.WARNING, 
+                        "Specified module '" + moduleName + "' not found at " + moduleSourceDir + ". Falling back to search.");
+                }
+            }
+            
             // Search for the source directory by looking for the source package
-            // Prioritize common module names that might contain the source
-            String[] possibleSourceDirs = {
-                currentDir + "/Main/src/main/java",      // Prioritize Main module
-                currentDir + "/app/src/main/java",
-                currentDir + "/core/src/main/java",
-                currentDir + "/api/src/main/java",
-                currentDir + "/service/src/main/java",
-                currentDir + "/web/src/main/java",
-                currentDir + "/client/src/main/java",
-                currentDir + "/server/src/main/java",
-                currentDir + "/src/main/java",           // Fallback to root src
-                currentDir + "/src/test/java"
-            };
+            // Build possible source directories list
+            List<String> possibleSourceDirs = new ArrayList<>();
+            
+            // If module name is specified, add it to the search list
+            if (moduleName != null && !moduleName.trim().isEmpty()) {
+                possibleSourceDirs.add(currentDir + "/" + moduleName + "/src/main/java");
+            }
+            
+            // Add common module names that might contain the source
+            possibleSourceDirs.add(currentDir + "/Main/src/main/java");      // Prioritize Main module
+            possibleSourceDirs.add(currentDir + "/app/src/main/java");
+            possibleSourceDirs.add(currentDir + "/core/src/main/java");
+            possibleSourceDirs.add(currentDir + "/api/src/main/java");
+            possibleSourceDirs.add(currentDir + "/service/src/main/java");
+            possibleSourceDirs.add(currentDir + "/web/src/main/java");
+            possibleSourceDirs.add(currentDir + "/client/src/main/java");
+            possibleSourceDirs.add(currentDir + "/server/src/main/java");
+            possibleSourceDirs.add(currentDir + "/src/main/java");           // Fallback to root src
+            possibleSourceDirs.add(currentDir + "/src/test/java");
             
             // First, try to find the directory containing the source class
             for (String sourceDir : possibleSourceDirs) {
