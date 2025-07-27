@@ -6,10 +6,7 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.util.*;
 
 /**
@@ -39,7 +36,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
 
     /** Messager for reporting compilation messages and errors */
     private Messager messager;
-    
+
     /** Filer for creating source files */
     private Filer filer;
 
@@ -72,30 +69,12 @@ public class ClassAutoGenerator extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         // Skip processing if this is the final round
         if (roundEnv.processingOver()) {
-            System.out.println("It's over!!!");
             return false;
-        }
-
-        System.out.println("total annotations here : ");
-        for (TypeElement typeElement : annotations){
-            System.out.println("element = " + typeElement);
-            System.out.println("Enclosing Element = " + typeElement.getEnclosingElement());
-            System.out.println("Qualified Name = " + typeElement.getQualifiedName());
-            System.out.println("Simple Name = " + typeElement.getSimpleName());
-            System.out.println("============================================================");
         }
 
         // Process each annotation type
         for (TypeElement annotation : annotations) {
             Set<? extends Element> annotatedElements = roundEnv.getElementsAnnotatedWith(annotation);
-            System.out.println("Elements annotated with " + annotation.getSimpleName());
-            for (Element element : annotatedElements){
-                System.out.println("element = " + element);
-                System.out.println("Enclosing Element = " + element.getEnclosingElement());
-                System.out.println("Simple Name = " + element.getSimpleName());
-                System.out.println("Annotation = " + element.getAnnotation(AutoGen.class));
-                System.out.println("============================================================");
-            }
             // Process each annotated element
             for (Element element : annotatedElements) {
                 // Only process classes and interfaces
@@ -118,13 +97,15 @@ public class ClassAutoGenerator extends AbstractProcessor {
      */
     private void processClass(TypeElement classElement) {
         // Get the @AutoGen annotation from the class
-        System.out.println("processing class : " + classElement);
+        //System.out.println("processing class : " + classElement);
         AutoGen autoGen = classElement.getAnnotation(AutoGen.class);
         if (autoGen == null) {
-            System.out.println("class : " + classElement + " is annotated but not with autogen");
+            //System.out.println("class : " + classElement + " is annotated but not with autogen");
+            messager.printMessage(Diagnostic.Kind.NOTE , "class : " + classElement + " is annotated but not with autogen");
             return;
         }
 
+        messager.printMessage(Diagnostic.Kind.NOTE,"processing class : " + classElement);
         // Extract annotation parameters
         String className = autoGen.name();
         String packageName = getPackageName(classElement);
@@ -498,7 +479,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
                                              simpleFields, serializedFields, serializers, fieldInfoMap);
         
         // Write only to source directory (skip filer to avoid recreation issues)
-        writeToSourceDirectory(dtoPackageName, className, sourceCode);
+        writeToSourceDirectory(sourceClass, dtoPackageName, className, sourceCode);
     }
 
     /**
@@ -551,13 +532,10 @@ public class ClassAutoGenerator extends AbstractProcessor {
     /**
      * Writes the source code to the source directory.
      */
-    private void writeToSourceDirectory(String packageName, String className, String sourceCode) {
+    private void writeToSourceDirectory(TypeElement sourceClass, String packageName, String className, String sourceCode) {
         try {
-            // Get the current working directory
-            String currentDir = System.getProperty("user.dir");
-            
-            // Find the source directory dynamically by looking for the package structure
-            String sourceDir = findSourceDirectory(currentDir, packageName);
+            // Get the source file location from the annotated class
+            String sourceDir = findSourceDirectoryFromClass(sourceClass, packageName);
             String packagePath = packageName.replace('.', '/');
             String fullPath = sourceDir + "/" + packagePath;
             
@@ -601,59 +579,6 @@ public class ClassAutoGenerator extends AbstractProcessor {
             current = current.getParentFile();
         }
         return System.getProperty("user.dir");
-    }
-
-    /**
-     * Finds the source directory that contains the given package.
-     * 
-     * @param currentDir the current directory to start searching from
-     * @param packageName the package name to search for
-     * @return the source directory path
-     */
-    private String findSourceDirectory(String currentDir, String packageName) {
-        // Convert package name to directory path
-        String packagePath = packageName.replace('.', '/');
-        
-        // Look for the package in common Maven source directories
-        // Prioritize Main module over root src directory
-        String[] possiblePaths = {
-            currentDir + "/Main/src/main/java",  // Prioritize Main module
-            currentDir + "/src/main/java",       // Fallback to root src
-            currentDir + "/class-generator/src/main/java"
-        };
-        
-        for (String path : possiblePaths) {
-            File packageDir = new File(path + "/" + packagePath);
-            if (packageDir.exists() && packageDir.isDirectory()) {
-                // Check if this directory contains original source files (not generated DTO files)
-                File[] files = packageDir.listFiles();
-                if (files != null) {
-                    boolean hasOriginalSourceFiles = false;
-                    for (File file : files) {
-                        if (file.isFile() && file.getName().endsWith(".java") && !file.getName().endsWith("DTO.java")) {
-                            hasOriginalSourceFiles = true;
-                            break;
-                        }
-                    }
-                    if (hasOriginalSourceFiles) {
-                        return path;
-                    }
-                }
-            }
-        }
-        
-        // If not found, try to find any src/main/java directory
-        File current = new File(currentDir);
-        while (current != null) {
-            File srcMainJava = new File(current, "src/main/java");
-            if (srcMainJava.exists() && srcMainJava.isDirectory()) {
-                return srcMainJava.getAbsolutePath();
-            }
-            current = current.getParentFile();
-        }
-        
-        // Fallback to current directory + src/main/java
-        return currentDir + "/src/main/java";
     }
 
     /**
@@ -1276,7 +1201,7 @@ public class ClassAutoGenerator extends AbstractProcessor {
 
     /**
      * Generates the DTO package name based on the source package.
-     * 
+     *
      * <p>This method creates a subpackage called "autogendto" within the source package
      * where the generated DTO classes will be placed.</p>
      * 
@@ -1287,8 +1212,122 @@ public class ClassAutoGenerator extends AbstractProcessor {
         if (sourcePackageName == null || sourcePackageName.isEmpty()) {
             throw new RuntimeException("Cannot get package name to store auto gen files in");
         }
-        
+
         // Create a subpackage called "autogendto" within the source package
         return sourcePackageName + ".autogendto";
+    }
+
+    /**
+     * Finds the source directory by analyzing the location of the annotated class.
+     * This method works with any project structure by dynamically detecting the source root.
+     * 
+     * @param sourceClass the annotated class element
+     * @param targetPackageName the target package name for the DTO
+     * @return the source directory path
+     */
+    private String findSourceDirectoryFromClass(TypeElement sourceClass, String targetPackageName) {
+        try {
+            // Get the source file URI from the class element
+            String sourceFileUri = sourceClass.getEnclosingElement().toString();
+
+            // Try to get the actual file path from the annotation processing environment
+            // This is a more reliable way to get the source file location
+            String sourceClassName = sourceClass.getQualifiedName().toString();
+            messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING , "src file uri = " + sourceFileUri);
+            messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING , "src file full name = " + sourceClassName);
+
+            String sourcePackageName = getPackageName(sourceClass);
+
+            // Get the current working directory
+            String currentDir = System.getProperty("user.dir");
+
+            // For DTO packages, we need to find the parent package directory
+            String parentPackageName = targetPackageName;
+            if (targetPackageName.endsWith(".autogendto")) {
+                parentPackageName = targetPackageName.substring(0, targetPackageName.length() - ".autogendto".length());
+            }
+            
+            // Convert package names to directory paths
+            String sourcePackagePath = sourcePackageName.replace('.', '/');
+            String parentPackagePath = parentPackageName.replace('.', '/');
+            
+            // Search for the source directory by looking for the source package
+            // Prioritize common module names that might contain the source
+            String[] possibleSourceDirs = {
+                currentDir + "/Main/src/main/java",      // Prioritize Main module
+                currentDir + "/app/src/main/java",
+                currentDir + "/core/src/main/java",
+                currentDir + "/api/src/main/java",
+                currentDir + "/service/src/main/java",
+                currentDir + "/web/src/main/java",
+                currentDir + "/client/src/main/java",
+                currentDir + "/server/src/main/java",
+                currentDir + "/src/main/java",           // Fallback to root src
+                currentDir + "/src/test/java"
+            };
+            
+            // First, try to find the directory containing the source class
+            for (String sourceDir : possibleSourceDirs) {
+                File sourcePackageDir = new File(sourceDir + "/" + sourcePackagePath);
+                
+                if (sourcePackageDir.exists() && sourcePackageDir.isDirectory()) {
+                    // Check if this directory contains the source class file
+                    File[] files = sourcePackageDir.listFiles();
+                    if (files != null) {
+                        boolean hasOriginalSourceFiles = false;
+                        for (File file : files) {
+                            if (file.isFile() && file.getName().endsWith(".java") && !file.getName().endsWith("DTO.java")) {
+                                hasOriginalSourceFiles = true;
+                                break;
+                            }
+                        }
+                        if (hasOriginalSourceFiles) {
+                            // Found the source directory with original source files
+                            return sourceDir;
+                        }
+                    }
+                }
+            }
+            
+            // If not found, try to find any directory that contains the parent package
+            for (String sourceDir : possibleSourceDirs) {
+                File parentPackageDir = new File(sourceDir + "/" + parentPackagePath);
+                
+                if (parentPackageDir.exists() && parentPackageDir.isDirectory()) {
+                    // Check if this directory contains original source files (not just generated DTOs)
+                    File[] files = parentPackageDir.listFiles();
+                    if (files != null) {
+                        boolean hasOriginalSourceFiles = false;
+                        for (File file : files) {
+                            if (file.isFile() && file.getName().endsWith(".java") && !file.getName().endsWith("DTO.java")) {
+                                hasOriginalSourceFiles = true;
+                                break;
+                            }
+                        }
+                        if (hasOriginalSourceFiles) {
+                            return sourceDir;
+                        }
+                    }
+                }
+            }
+            
+            // Fallback: search recursively for src/main/java directories
+            File current = new File(currentDir);
+            while (current != null) {
+                File srcMainJava = new File(current, "src/main/java");
+                if (srcMainJava.exists() && srcMainJava.isDirectory()) {
+                    return srcMainJava.getAbsolutePath();
+                }
+                current = current.getParentFile();
+            }
+            
+            // Final fallback
+            return currentDir + "/src/main/java";
+            
+        } catch (Exception e) {
+            messager.printMessage(Diagnostic.Kind.WARNING, 
+                "Error detecting source directory: " + e.getMessage());
+            return System.getProperty("user.dir") + "/src/main/java";
+        }
     }
 }
