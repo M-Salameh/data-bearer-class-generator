@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>class-generator</artifactId>
-<!--    <version>1.0.0</version>-->
+    <version>1.0.0-alpha</version>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

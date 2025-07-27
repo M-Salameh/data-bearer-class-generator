@@ -36,7 +36,7 @@ Add the annotation processor to your project's `pom.xml`:
 <dependency>
     <groupId>com.AutoGenClass</groupId>
     <artifactId>class-generator</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.0-alpha</version>
     <scope>provided</scope>
 </dependency>
 ```
@@ -54,11 +54,11 @@ Configure the Maven compiler plugin to use the annotation processor:
         <source>21</source>
         <target>21</target>
         <annotationProcessorPaths>
-            <path>
-                <groupId>com.AutoGenClass</groupId>
-                <artifactId>class-generator</artifactId>
-                <version>1.0.0</version>
-            </path>
+                                    <path>
+                            <groupId>com.AutoGenClass</groupId>
+                            <artifactId>class-generator</artifactId>
+                            <version>1.0.0-alpha</version>
+                        </path>
         </annotationProcessorPaths>
     </configuration>
 </plugin>

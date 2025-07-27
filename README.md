@@ -2,6 +2,8 @@
 
 A powerful Java annotation processor that automatically generates DTO (Data Transfer Object) classes with full Jackson serialization support. The generator supports multi-module projects and provides flexible configuration options.
 
+> **⚠️ Alpha Version**: This project is currently in alpha testing phase. The API may change and improvements are ongoing. Use with caution in production environments.
+
 ## 🚀 Features
 
 - ✅ **Annotation-Based**: Simple `@AutoGen` annotation for DTO generation
@@ -22,7 +24,7 @@ Add the annotation processor to your project:
 <dependency>
     <groupId>com.AutoGenClass</groupId>
     <artifactId>class-generator</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.0-alpha</version>
     <scope>provided</scope>
 </dependency>
 ```
@@ -40,11 +42,11 @@ Add the annotation processor to your Maven compiler plugin:
         <source>21</source>
         <target>21</target>
         <annotationProcessorPaths>
-            <path>
-                <groupId>com.AutoGenClass</groupId>
-                <artifactId>class-generator</artifactId>
-                <version>1.0.0</version>
-            </path>
+                                    <path>
+                            <groupId>com.AutoGenClass</groupId>
+                            <artifactId>class-generator</artifactId>
+                            <version>1.0.0-alpha</version>
+                        </path>
         </annotationProcessorPaths>
     </configuration>
 </plugin>
@@ -245,6 +247,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📄 License
 
 This project is open source and available under the MIT License.
+
+## 📋 Version History
+
+- **v1.0.0-alpha** (Current): Alpha version with multi-module support and enhanced features
+  - Added `module` parameter for targeting specific modules
+  - Enhanced collection support with proper generics
+  - Improved entity dependency handling
+  - Complete Jackson integration
+  - Type-safe DTO generation
 
 ## 👨‍💻 Author
 
