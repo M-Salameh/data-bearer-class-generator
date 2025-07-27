@@ -78,7 +78,7 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
     simpleFields = {"id", "username", "email", "firstName", "lastName"},
     serializedFields = {"password", "createdAt"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "UserDTO"
+    name = "UserDTO" , module = "Main"
 )
 public class User {
     private Long id;
@@ -133,7 +133,7 @@ Specify a target module for DTO generation:
     serializedFields = {"metadata"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer"},
     name = "ProductDTO",
-    module = "api"  // Creates DTO in 'api' module
+    module = "Main"  // Creates DTO in 'Main' module
 )
 public class Product {
     // ... fields
@@ -151,7 +151,7 @@ The processor automatically handles collections with proper generics:
     simpleFields = {"id", "username", "roles", "preferences", "addresses"},
     serializedFields = {"password"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "EnhancedUserDTO"
+    name = "EnhancedUserDTO", module = "Main"
 )
 public class EnhancedUser {
     private Long id;
@@ -172,7 +172,7 @@ Support for external entity types from JAR dependencies:
     simpleFields = {"id", "userProfile", "relatedProfiles"},
     serializedFields = {"password"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "UserWithProfileDTO"
+    name = "UserWithProfileDTO", module = "Main"
 )
 public class UserWithProfile {
     private Long id;
@@ -191,7 +191,7 @@ Use custom serializers for specific fields:
     simpleFields = {"id", "name"},
     serializedFields = {"sensitiveData", "encryptedField"},
     serializers = {"com.example.serializer.SensitiveDataSerializer", "com.example.serializer.EncryptionSerializer"},
-    name = "SecureDTO"
+    name = "SecureDTO", module = "Main"
 )
 public class SecureEntity {
     private Long id;
@@ -241,7 +241,7 @@ project/
     simpleFields = {"id", "username", "email", "firstName", "lastName"},
     serializedFields = {"password", "createdAt"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer", "com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "UserDTO"
+    name = "UserDTO", module = "Main"
 )
 public class User {
     private Long id;
@@ -299,7 +299,7 @@ public class UserDTO implements Serializable {
     simpleFields = {"id", "username", "roles", "preferences"},
     serializedFields = {"password"},
     serializers = {"com.fasterxml.jackson.databind.ser.std.StdSerializer"},
-    name = "EnhancedUserDTO"
+    name = "EnhancedUserDTO", module = "Main"
 )
 public class EnhancedUser {
     private Long id;
